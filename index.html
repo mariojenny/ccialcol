@@ -261,7 +261,7 @@
 	  <div style="background:white;padding:30px;border-radius:10px;max-width:400px;width:100%;text-align:center;">
 		<h3>Acceso exclusivo para Miembros</h3>
 		  <p>Si necesitas acceso contactate con un miembro del comite de comunicaciones</p>
-		<input type="password" id="password" placeholder="Contraseña" class="form-control mb-3">
+		<input type="password" id="password" placeholder="Contraseña" class="form-control mb-3" onkeydown="detectarEnter(event)">
 		<button class="btn btn-primary" onclick="validar()">Ingresar</button>
 		<p id="error" style="color:red;margin-top:10px;display:none;">Contraseña incorrecta</p>
 	  </div>
@@ -274,6 +274,10 @@
 		document.getElementById("loginModal").style.display = "flex";
 	  }
 
+	 function detectarEnter(event) {
+	    if (event.key === "Enter") { validar(); }
+	  }
+		
 	  function validar() {
 		const pass = document.getElementById("password").value;
 
