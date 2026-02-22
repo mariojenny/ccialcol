@@ -1,6 +1,5 @@
-import pandas as pd
+import csv
 import os
-import re
 from datetime import datetime
 
 # CONFIGURACIÓN
@@ -14,33 +13,63 @@ def update_password():
         print(f"[-] Error: No se encontró el archivo {CSV_FILE}")
         return
 
-    try:
-        df = pd.read_csv(CSV_FILE, sep='|', dtype={'Fecha': str})
-    except Exception as e:
-        print(f"[-] Error al leer el CSV: {e}")
+    registros = []
+    # Intentar diferentes codificaciones
+    encodings = ['utf-8-sig', 'latin-1', 'cp1252']
+    success = False
+    
+    for enc in encodings:
+        try:
+            with open(CSV_FILE, mode='r', encoding=enc) as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    clean_row = {str(k).strip(): str(v).strip() for k, v in row.items()}
+                    registros.append(clean_row)
+            success = True
+            break
+        except Exception:
+            registros = []
+            continue
+
+    if not success:
+        print(f"[-] Error: No se pudo leer el archivo {CSV_FILE} con ninguna codificación estándar.")
+        return
+
+    if not registros:
+        print(f"[-] Error: El archivo {CSV_FILE} está vacío o no tiene el formato esperado.")
         return
 
     # 2. Obtener fecha de hoy
     hoy = datetime.now().strftime('%Y%m%d')
     
-    # 3. Determinar la contraseña actual (la que debería estar en el código)
-    # y la nueva (la que toca poner hoy)
-    df = df.sort_values(by='Fecha')
+    # 3. Determinar la contraseña actual y la nueva
+    try:
+        registros.sort(key=lambda x: x['Fecha'])
+    except KeyError:
+        print("[-] Error: No se encontró la columna 'Fecha'. Verifique el formato del CSV.")
+        return
     
-    idx_hoy = df.index[df['Fecha'] == hoy].tolist()
-    
-    if not idx_hoy:
+    idx_hoy = -1
+    for i, reg in enumerate(registros):
+        if reg['Fecha'] == hoy:
+            idx_hoy = i
+            break
+            
+    if idx_hoy == -1:
         print(f"[!] No hay cambios programados para hoy ({hoy}).")
         return
 
-    nueva_password = df.loc[idx_hoy[0], 'Contraseña'].strip()
-    
-    # Intentamos buscar la contraseña anterior en el CSV para saber qué reemplazar
-    current_idx = idx_hoy[0]
-    if current_idx > 0:
-        vieja_password = df.iloc[current_idx - 1]['Contraseña'].strip()
-    else:
-        vieja_password = INITIAL_PASSWORD
+    try:
+        col_pass = [k for k in registros[0].keys() if 'Contrase' in k][0]
+        nueva_password = registros[idx_hoy][col_pass]
+        
+        if idx_hoy > 0:
+            vieja_password = registros[idx_hoy - 1][col_pass]
+        else:
+            vieja_password = INITIAL_PASSWORD
+    except (IndexError, KeyError):
+        print("[-] Error: No se encontró la columna de contraseña.")
+        return
 
     if vieja_password == nueva_password:
         print("[!] La contraseña actual y la nueva son iguales. Nada que hacer.")
@@ -52,7 +81,7 @@ def update_password():
     archivos_modificados = 0
     for archivo in os.listdir('.'):
         if any(archivo.endswith(ext) for ext in EXTENSIONS_TO_SEARCH):
-            if archivo == 'updater.py': continue # No modificarse a sí mismo
+            if archivo == 'updater.py': continue
             
             try:
                 with open(archivo, 'r', encoding='utf-8') as f:
@@ -66,17 +95,13 @@ def update_password():
                     
                     print(f"[+] Actualizado: {archivo}")
                     archivos_modificados += 1
-                else:
-                    # Opcional: Si no encuentra la vieja_password, podrías usar Regex 
-                    # para buscar patrones como: password = "..."
-                    pass
             except Exception as e:
                 print(f"[-] Error procesando {archivo}: {e}")
 
     if archivos_modificados > 0:
         print(f"[OK] Proceso terminado. Se actualizaron {archivos_modificados} archivos.")
     else:
-        print("[?] No se encontró la contraseña antigua en ningún archivo. Verifica que coincida con el CSV.")
+        print("[?] No se encontró la contraseña antigua en ningún archivo.")
 
 if __name__ == "__main__":
     update_password()
