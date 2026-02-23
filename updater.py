@@ -1,107 +1,86 @@
 import csv
+import logging
 import os
+import sys
 from datetime import datetime
 
-# CONFIGURACIÓN
-CSV_FILE = 'psw_change.csv'
-EXTENSIONS_TO_SEARCH = ['.html', '.js']  # Archivos donde podría estar la clave
-INITIAL_PASSWORD = 'colombia2026'        # Clave inicial si no hay historial
+# -----------------------------
+# Logging configuration
+# -----------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-def update_password():
-    # 1. Cargar el CSV
+logger = logging.getLogger(__name__)
+
+CSV_FILE = "psw_change.csv"
+
+
+def get_today_password():
+    today = datetime.now().strftime("%Y-%m-%d")
+    logger.info(f"Checking password change for date: {today}")
+
     if not os.path.exists(CSV_FILE):
-        print(f"[-] Error: No se encontró el archivo {CSV_FILE}")
-        return
+        logger.error(f"CSV file '{CSV_FILE}' not found.")
+        sys.exit(1)
 
-    registros = []
-    # Intentar diferentes codificaciones
-    encodings = ['utf-8-sig', 'latin-1', 'cp1252']
-    success = False
-    
-    for enc in encodings:
-        try:
-            with open(CSV_FILE, mode='r', encoding=enc) as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    clean_row = {str(k).strip(): str(v).strip() for k, v in row.items()}
-                    registros.append(clean_row)
-            success = True
-            break
-        except Exception:
-            registros = []
-            continue
+    with open(CSV_FILE, newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            if row["date"] == today:
+                logger.info("Password entry found for today.")
+                return row["old_password"], row["new_password"]
 
-    if not success:
-        print(f"[-] Error: No se pudo leer el archivo {CSV_FILE} con ninguna codificación estándar.")
-        return
+    logger.warning("No password change scheduled for today.")
+    return None, None
 
-    if not registros:
-        print(f"[-] Error: El archivo {CSV_FILE} está vacío o no tiene el formato esperado.")
-        return
 
-    # 2. Obtener fecha de hoy
-    hoy = datetime.now().strftime('%Y%m%d')
-    
-    # 3. Determinar la contraseña actual y la nueva
-    try:
-        registros.sort(key=lambda x: x['Fecha'])
-    except KeyError:
-        print("[-] Error: No se encontró la columna 'Fecha'. Verifique el formato del CSV.")
-        return
-    
-    idx_hoy = -1
-    for i, reg in enumerate(registros):
-        if reg['Fecha'] == hoy:
-            idx_hoy = i
-            break
-            
-    if idx_hoy == -1:
-        print(f"[!] No hay cambios programados para hoy ({hoy}).")
-        return
+def update_files(old_password, new_password):
+    updated_files = []
 
-    try:
-        col_pass = [k for k in registros[0].keys() if 'Contrase' in k][0]
-        nueva_password = registros[idx_hoy][col_pass]
-        
-        if idx_hoy > 0:
-            vieja_password = registros[idx_hoy - 1][col_pass]
-        else:
-            vieja_password = INITIAL_PASSWORD
-    except (IndexError, KeyError):
-        print("[-] Error: No se encontró la columna de contraseña.")
-        return
+    for root, _, files in os.walk("."):
+        for file in files:
+            if file.endswith(".html") or file.endswith(".js"):
+                filepath = os.path.join(root, file)
 
-    if vieja_password == nueva_password:
-        print("[!] La contraseña actual y la nueva son iguales. Nada que hacer.")
-        return
+                with open(filepath, "r", encoding="utf-8") as f:
+                    content = f.read()
 
-    print(f"[*] Iniciando cambio: '{vieja_password}' -> '{nueva_password}'")
+                if old_password in content:
+                    logger.info(f"Updating password in {filepath}")
+                    updated_content = content.replace(old_password, new_password)
 
-    # 4. Escanear y reemplazar en los archivos de la carpeta
-    archivos_modificados = 0
-    for archivo in os.listdir('.'):
-        if any(archivo.endswith(ext) for ext in EXTENSIONS_TO_SEARCH):
-            if archivo == 'updater.py': continue
-            
-            try:
-                with open(archivo, 'r', encoding='utf-8') as f:
-                    contenido = f.read()
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        f.write(updated_content)
 
-                if vieja_password in contenido:
-                    nuevo_contenido = contenido.replace(vieja_password, nueva_password)
-                    
-                    with open(archivo, 'w', encoding='utf-8') as f:
-                        f.write(nuevo_contenido)
-                    
-                    print(f"[+] Actualizado: {archivo}")
-                    archivos_modificados += 1
-            except Exception as e:
-                print(f"[-] Error procesando {archivo}: {e}")
+                    updated_files.append(filepath)
 
-    if archivos_modificados > 0:
-        print(f"[OK] Proceso terminado. Se actualizaron {archivos_modificados} archivos.")
+    if updated_files:
+        logger.info(f"Updated {len(updated_files)} file(s).")
     else:
-        print("[?] No se encontró la contraseña antigua en ningún archivo.")
+        logger.info("No files required updating.")
+
+    return updated_files
+
+
+def main():
+    logger.info("Starting password update process...")
+
+    old_password, new_password = get_today_password()
+
+    if not old_password:
+        logger.info("No updates needed today. Exiting.")
+        return
+
+    update_files(old_password, new_password)
+
+    logger.info("Process completed successfully.")
+
 
 if __name__ == "__main__":
-    update_password()
+    try:
+        main()
+    except Exception:
+        logger.exception("Unexpected error occurred!")
+        sys.exit(1)
