@@ -4,9 +4,6 @@ import os
 import sys
 from datetime import datetime
 
-# -----------------------------
-# Logging configuration
-# -----------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
@@ -17,26 +14,6 @@ logger = logging.getLogger(__name__)
 CSV_FILE = "psw_change.csv"
 
 
-# -----------------------------
-# Open CSV with safe encoding detection
-# -----------------------------
-def open_csv_file(filename):
-    encodings = ["utf-8", "latin-1", "cp1252"]
-
-    for enc in encodings:
-        try:
-            logger.info(f"Trying to open CSV with encoding: {enc}")
-            return open(filename, newline="", encoding=enc)
-        except UnicodeDecodeError:
-            continue
-
-    logger.error("Could not decode CSV file with supported encodings.")
-    sys.exit(1)
-
-
-# -----------------------------
-# Get today's password change
-# -----------------------------
 def get_today_password():
     today = datetime.now().strftime("%Y-%m-%d")
     logger.info(f"Checking password change for date: {today}")
@@ -46,14 +23,13 @@ def get_today_password():
         sys.exit(1)
 
     try:
-        with open_csv_file(CSV_FILE) as csvfile:
+        with open(CSV_FILE, newline="", encoding="utf-8-sig") as csvfile:
             reader = csv.DictReader(csvfile)
 
-            if not reader.fieldnames:
-                logger.error("CSV file has no headers.")
-                sys.exit(1)
+            # Normalize headers (remove BOM and spaces)
+            reader.fieldnames = [h.strip() for h in reader.fieldnames]
 
-            required_fields = {"date", "old_password", "new_password"}
+            required_fields = {"Fecha", "Contrasenia"}
             if not required_fields.issubset(set(reader.fieldnames)):
                 logger.error(
                     f"CSV must contain headers: {required_fields}. Found: {reader.fieldnames}"
@@ -61,22 +37,20 @@ def get_today_password():
                 sys.exit(1)
 
             for row in reader:
-                if row["date"] == today:
+                fecha = row["Fecha"].strip()
+                if fecha == today:
                     logger.info("Password entry found for today.")
-                    return row["old_password"], row["new_password"]
+                    return row["Contrasenia"].strip()
 
     except Exception:
         logger.exception("Error reading CSV file.")
         sys.exit(1)
 
     logger.info("No password change scheduled for today.")
-    return None, None
+    return None
 
 
-# -----------------------------
-# Update HTML and JS files
-# -----------------------------
-def update_files(old_password, new_password):
+def update_files(new_password):
     updated_files = []
 
     for root, _, files in os.walk("."):
@@ -88,9 +62,14 @@ def update_files(old_password, new_password):
                     with open(filepath, "r", encoding="utf-8") as f:
                         content = f.read()
 
-                    if old_password in content:
+                    # Replace whatever password logic you currently use
+                    # Example: replace placeholder PASSWORD_HERE
+                    if "PASSWORD_PLACEHOLDER" in content:
                         logger.info(f"Updating password in {filepath}")
-                        updated_content = content.replace(old_password, new_password)
+                        updated_content = content.replace(
+                            "PASSWORD_PLACEHOLDER",
+                            new_password
+                        )
 
                         with open(filepath, "w", encoding="utf-8") as f:
                             f.write(updated_content)
@@ -109,19 +88,16 @@ def update_files(old_password, new_password):
     return updated_files
 
 
-# -----------------------------
-# Main process
-# -----------------------------
 def main():
     logger.info("Starting password update process...")
 
-    old_password, new_password = get_today_password()
+    new_password = get_today_password()
 
-    if not old_password:
+    if not new_password:
         logger.info("No updates needed today. Exiting.")
         return
 
-    update_files(old_password, new_password)
+    update_files(new_password)
 
     logger.info("Process completed successfully.")
 
