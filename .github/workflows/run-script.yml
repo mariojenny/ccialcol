@@ -1,0 +1,30 @@
+name: Update HTML Automatically
+
+on:
+  schedule:
+    - cron: "15 5 1 * *"   # Cada primero de mes
+  workflow_dispatch:
+
+jobs:
+  update-html:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Run script
+        run: python updater.py
+        
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .
+          git commit -m "Auto update HTML" || echo "No changes to commit"
+          git push
